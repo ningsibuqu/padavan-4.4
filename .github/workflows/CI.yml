@@ -2,9 +2,12 @@ name: CI
 
 # Controls when the action will run. 
 on: 
-  push:
-  pull_request:
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'     
+        required: false
+        default: 'no'
   release:
     types: [published]
 
@@ -24,7 +27,7 @@ jobs:
           - build_variant: "mt7621"
             targets: "K2P_nano"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Prepare environment
         run: |
           sudo apt update
@@ -35,6 +38,11 @@ jobs:
         run: |
           cd toolchain-mipsel
           sh dl_toolchain.sh
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled == 'yes' }}
+        with:
+          limit-access-to-actor: true
       - name: Start build
         run: |
           cd trunk
@@ -52,18 +60,13 @@ jobs:
           echo "image_name=${image_name}" >> $GITHUB_ENV
       - name: Upload images to Artifact
         if: ${{ github.event_name != 'release' && success() }}
-        uses: actions/upload-artifact@v2.2.1
+        uses: actions/upload-artifact@v4.2.0
         with:
           name: ${{ env.image_name }}
           path: ${{ env.images_dir }}/*.7z
-      - name: Upload firmware to WeTransfer
-        run: |
-          curl -fsSL git.io/file-transfer | sh
-          ./transfer wet -s -p 16 --no-progress /opt/images/*.trx 2>&1 | tee wetransfer.log
-          echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
       - name: Upload images to Releases
         if: ${{ github.event_name == 'release' && success() }}
-        uses: svenstaro/upload-release-action@2.2.0
+        uses: svenstaro/upload-release-action@2.7.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ env.images_dir }}/*.trx
